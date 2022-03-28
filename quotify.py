@@ -9,7 +9,7 @@ import subprocess
 import tqdm
 
 
-YOUTUBE_DL_EXECUTABLE = "youtube-dl"
+YOUTUBE_DL_EXECUTABLE = "yt-dlp"
 FFMPEG_EXECUTABLE = "ffmpeg"
 CAPTIONS_FOLDER = "captions"
 
@@ -305,11 +305,10 @@ def get_video_stream(url):
     return split
 
 
-def extract_captions(video_source, captions):
+def extract_captions(video_source, captions, parts_directory):
     files = []
-    tempdir = tempfile.gettempdir()
     for i, caption in enumerate(tqdm.tqdm(captions)):
-        outpath = os.path.join(tempdir, "%04d.mp4" % i)
+        outpath = os.path.join(parts_directory, "%04d.mp4" % i)
         files.append(outpath)
         if isinstance(video_source, str):
             subprocess.Popen(
@@ -388,31 +387,50 @@ def merge_video_files(files, video_output):
     ).wait()
 
 
-def main_compile_word(vtt_source, word, video_output, video_source=None):
+def main_compile_word(vtt_source, video_source, word, video_output, parts_directory):
+    if word is None:
+        raise ValueError("Target word is None")
     captions = retrieve_captions(vtt_source)
     selection = filter_captions_for_word(captions, word)
     if video_source is None:
         video_source = get_video_stream(vtt_source)
-    files = extract_captions(video_source, selection)
+    files = extract_captions(video_source, selection, parts_directory)
     merge_video_files(files, video_output)
+
+
+def download_video(url, output):
+    subprocess.Popen(
+        [
+            YOUTUBE_DL_EXECUTABLE,
+            "--write-auto-sub",
+            "--sub-lang",
+            "fr",
+            "--sub-format",
+            "vtt",
+            "--output",
+            output,
+            url,
+        ]
+    ).wait()
 
 
 def main():
     parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(dest="action")
-    parse_parser = subparsers.add_parser("parse")
-    parse_parser.add_argument("vtt_source", type=str, help="YouTube video URL, or path to a WebVTT file")
-    parse_parser.add_argument("captions_output", type=str, help="path to a JSON or CSV output file")
-    compile_word_parser = subparsers.add_parser("compile_word")
-    compile_word_parser.add_argument("vtt_source", type=str, help="YouTube video URL, or path to a WebVTT file")
-    compile_word_parser.add_argument("word", type=str, help="the word to extract")
-    compile_word_parser.add_argument("video_output", type=str, help="path to the output video")
-    compile_word_parser.add_argument("-v", "--video", type=str, default=None, help="path to a local video file")
+    parser.add_argument("action", type=str, choices={"parse", "word", "download"})
+    parser.add_argument("input", type=str, nargs="+")
+    parser.add_argument("output", type=str)
+    parser.add_argument("-d", "--parts-directory", type=str, default=tempfile.gettempdir())
+    parser.add_argument("-w", "--word", type=str)    
     args = parser.parse_args()
+    for i in range(0, len(args.input), 2):
+        if i + 1 < len(args.input) and args.input[i + 1] == "_":
+            args.input[i + 1] = args.input[i]
     if args.action == "parse":
-        main_parse(args.vtt_source, args.captions_output)
-    elif args.action == "compile_word":
-        main_compile_word(args.vtt_source, args.word, args.video_output, args.video)
+        main_parse(args.input[0], args.output)
+    elif args.action == "word":
+        main_compile_word(args.input[0], args.input[1], args.word, args.output, args.parts_directory)
+    elif args.action == "download":
+        download_video(args.input[0], args.output)
 
 
 if __name__ == "__main__":

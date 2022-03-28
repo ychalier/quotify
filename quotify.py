@@ -11,6 +11,7 @@ import tqdm
 
 YOUTUBE_DL_EXECUTABLE = "yt-dlp"
 FFMPEG_EXECUTABLE = "ffmpeg"
+FFPROBE_EXECUTABLE = "ffprobe"
 CAPTIONS_FOLDER = "captions"
 
 
@@ -32,6 +33,12 @@ def extract_video_id(url):
     if match is not None:
         return match.group(1)
     raise ValueError(f"Could not extract video id from { url }")
+
+
+def tokenize(sentence):
+    """Split a string in a list of tokens, after basic normalization
+    """
+    return list(filter(lambda x: len(x) > 0, re.sub(r" +", " ", re.sub(r"[^a-z0-9]", " ", sentence.lower())).strip().split(" ")))
 
 
 @enum.unique
@@ -114,9 +121,9 @@ class Caption:
         self.source = source
     
     def __repr__(self):
-        return "%s --> %s\t%s" % (
-            str(self.start),
-            str(self.end),
+        return "%s-%s %s" % (
+            repr(self.start),
+            repr(self.end),
             self.text
         )
     
@@ -145,6 +152,9 @@ class Caption:
             # "end_premiere_timecode": self.end.to_premiere_timecode(),
             "source": self.source.name if self.source is not None else None
         }
+    
+    def tokens(self):
+        return tokenize(self.text)
 
 
 def download_subtitles(url, lang="fr"):
@@ -278,14 +288,32 @@ def main_parse(vtt_source, captions_output):
     export_captions(captions, captions_output)
 
 
-def filter_captions_for_word(captions, word):
+def get_video_size(video_path):
+    process = subprocess.Popen(
+        [
+            FFPROBE_EXECUTABLE,
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_streams",
+            video_path
+        ],
+        stdout=subprocess.PIPE
+    )
+    process.wait()
+    data = json.loads(process.stdout.read().decode("utf8"))
+    for stream in data["streams"]:
+        if "width" in stream and "height" in stream:
+            return stream["width"], stream["height"]
+    raise RuntimeError(f"Could not retrieve the size of { video_path }")
+
+
+def filter_captions_for_word(captions, video_source, word, padding_prev, padding_next):
     selection = []
     for i, caption in enumerate(captions):
         if word in caption.text:
-            copy_ = caption.copy()
-            if i < len(captions) - 1:
-                copy_.end = captions[i + 1].end.copy()
-            selection.append(copy_)
+            selection.append((video_source, captions[i - padding_prev:i + padding_next + 1]))
     return selection
 
 
@@ -305,67 +333,12 @@ def get_video_stream(url):
     return split
 
 
-def extract_captions(video_source, captions, parts_directory):
-    files = []
-    for i, caption in enumerate(tqdm.tqdm(captions)):
-        outpath = os.path.join(parts_directory, "%04d.mp4" % i)
-        files.append(outpath)
-        if isinstance(video_source, str):
-            subprocess.Popen(
-                [
-                    FFMPEG_EXECUTABLE,
-                    "-loglevel",
-                    "quiet",
-                    "-hide_banner",
-                    "-ss",
-                    caption.start.to_ffmpeg_timecode(),
-                    "-i",
-                    video_source,
-                    "-t",
-                    (caption.end - caption.start).to_ffmpeg_timecode(),
-                    outpath,
-                    "-y"
-                ]
-            ).wait()
-        else:
-            subprocess.Popen(
-                [
-                    FFMPEG_EXECUTABLE,
-                    "-loglevel",
-                    "quiet",
-                    "-hide_banner",
-                    "-ss",
-                    caption.start.to_ffmpeg_timecode(),
-                    "-i",
-                    video_source[0],
-                    "-t",
-                    (caption.end - caption.start).to_ffmpeg_timecode(),
-                    "-ss",
-                    caption.start.to_ffmpeg_timecode(),
-                    "-i",
-                    video_source[1],
-                    "-t",
-                    (caption.end - caption.start).to_ffmpeg_timecode(),
-                    "-map",
-                    "0:v",
-                    "-map",
-                    "1:a",
-                    "-c:v",
-                    "libx264",
-                    "-c:a",
-                    "aac",
-                    outpath,
-                    "-y"
-                ]
-            ).wait()
-    return files
-
-
 def merge_video_files(files, video_output):
     tempdir = tempfile.gettempdir()
     with open(os.path.join(tempdir, "concat.txt"), "w", encoding="utf8") as outfile:
         for file in files:
             outfile.write("file '%s'\n" % file)
+    width, height = get_video_size(files[0])
     subprocess.Popen(
         [
             FFMPEG_EXECUTABLE,
@@ -379,22 +352,22 @@ def merge_video_files(files, video_output):
             "0",
             "-i",
             os.path.join(tempdir, "concat.txt"),
-            "-c",
-            "copy",
+            "-vf",
+            f"scale={ width }:{ height }",
             video_output,
             "-y"
         ]
     ).wait()
 
 
-def main_compile_word(vtt_source, video_source, word, video_output, parts_directory):
+def main_compile_word(vtt_source, video_source, word, video_output, parts_directory, padding_prev, padding_next):
     if word is None:
         raise ValueError("Target word is None")
     captions = retrieve_captions(vtt_source)
-    selection = filter_captions_for_word(captions, word)
+    selection = filter_captions_for_word(captions, video_source, word, padding_prev, padding_next)
     if video_source is None:
         video_source = get_video_stream(vtt_source)
-    files = extract_captions(video_source, selection, parts_directory)
+    files = extract_captions(selection, parts_directory)
     merge_video_files(files, video_output)
 
 
@@ -414,13 +387,146 @@ def download_video(url, output):
     ).wait()
 
 
+def find_in_captions(captions, tokens, padding_prev, padding_next):
+    """Try to find a sub-sequence of captions exactly matching the input
+    tokens. Return the list if found, else, None is returned.
+    """
+    match = []
+    i = 0
+    index_first = None
+    index_last = None
+    for k, caption in enumerate(captions):
+        match_whole = False
+        for token in caption.tokens():
+            if token == "":
+                continue
+            if i < len(tokens) and token == tokens[i]:
+                if i == 0:
+                    match_whole = True
+                i += 1
+            else:
+                match_whole = False
+                break
+        if match_whole:
+            if len(match) == 0:
+                index_first = k
+            index_last = k
+            match.append(caption)
+            if i == len(tokens):
+                break
+        else:
+            match = []
+            i = 0
+    return None if len(match) == 0 else captions[index_first - padding_prev: index_last + padding_next + 1]
+
+
+def find_captions_for_sentence(inputs, sentence, padding_prev, padding_next):
+    tokens = tokenize(sentence)
+    i = 0
+    selection = []
+    while i < len(tokens):
+        found_i = False
+        for j in range(len(tokens), i, -1):
+            found_at_j = False
+            for captions, video_source in inputs:
+                match = find_in_captions(captions, tokens[i:j], padding_prev, padding_next)
+                if match is not None:
+                    found_at_j = True
+                    selection.append((video_source, match))
+                    break
+            if found_at_j:
+                i = j
+                found_i = True
+                break
+        if not found_i:
+            print(f"Could not find '{ tokens[i] }'")
+            i += 1
+    return selection
+
+
+def extract_captions(selection, parts_directory):
+    files = []
+    for i, (video_source, captions) in enumerate(tqdm.tqdm(selection)):
+        outpath = os.path.join(parts_directory, "%04d.mp4" % i)
+        files.append(os.path.realpath(outpath))
+        if isinstance(video_source, str):
+            subprocess.Popen(
+                [
+                    FFMPEG_EXECUTABLE,
+                    "-loglevel",
+                    "quiet",
+                    "-hide_banner",
+                    "-ss",
+                    captions[0].start.to_ffmpeg_timecode(),
+                    "-i",
+                    video_source,
+                    "-t",
+                    (captions[-1].end - captions[0].start).to_ffmpeg_timecode(),
+                    outpath,
+                    "-y"
+                ]
+            ).wait()
+        else:
+            subprocess.Popen(
+                [
+                    FFMPEG_EXECUTABLE,
+                    "-loglevel",
+                    "quiet",
+                    "-hide_banner",
+                    "-ss",
+                    captions[0].start.to_ffmpeg_timecode(),
+                    "-i",
+                    video_source[0],
+                    "-t",
+                    (captions[-1].end - captions[0].start).to_ffmpeg_timecode(),
+                    "-ss",
+                    captions[0].start.to_ffmpeg_timecode(),
+                    "-i",
+                    video_source[1],
+                    "-t",
+                    (captions[-1].end - captions[0].start).to_ffmpeg_timecode(),
+                    "-map",
+                    "0:v",
+                    "-map",
+                    "1:a",
+                    "-c:v",
+                    "libx264",
+                    "-c:a",
+                    "aac",
+                    outpath,
+                    "-y"
+                ]
+            ).wait()
+    return files
+
+
+def main_build_sentence(raw_inputs, sentence, video_output, part_directory, padding_prev, padding_next):
+    if sentence is None:
+        raise ValueError("Target sentence is None")
+    if os.path.isfile(sentence):
+        with open(sentence, "r", encoding="utf8") as file:
+            sentence = file.read()
+    inputs = []
+    for vtt_source, video_source in zip(raw_inputs[::2], raw_inputs[1::2]):
+        captions = retrieve_captions(vtt_source)
+        if not os.path.isfile(video_source):
+            video_source = get_video_stream(video_source)
+        inputs.append((captions, video_source))
+    selection = find_captions_for_sentence(inputs, sentence, padding_prev, padding_next)
+    files = extract_captions(selection, part_directory)
+    merge_video_files(files, video_output)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", type=str, choices={"parse", "word", "download"})
+    parser.add_argument("action", type=str, choices={"parse", "word", "download", "sentence"})
     parser.add_argument("input", type=str, nargs="+")
     parser.add_argument("output", type=str)
     parser.add_argument("-d", "--parts-directory", type=str, default=tempfile.gettempdir())
-    parser.add_argument("-w", "--word", type=str)    
+    parser.add_argument("-w", "--word", type=str)
+    parser.add_argument("-s", "--sentence", type=str)
+    parser.add_argument("-pp", "--padding-prev", type=int, default=0)
+    parser.add_argument("-pn", "--padding-next", type=int, default=1)
     args = parser.parse_args()
     for i in range(0, len(args.input), 2):
         if i + 1 < len(args.input) and args.input[i + 1] == "_":
@@ -428,9 +534,11 @@ def main():
     if args.action == "parse":
         main_parse(args.input[0], args.output)
     elif args.action == "word":
-        main_compile_word(args.input[0], args.input[1], args.word, args.output, args.parts_directory)
+        main_compile_word(args.input[0], args.input[1], args.word, args.output, args.parts_directory, args.padding_prev, args.padding_next)
     elif args.action == "download":
         download_video(args.input[0], args.output)
+    elif args.action == "sentence":
+        main_build_sentence(args.input, args.sentence, args.output, args.parts_directory, args.padding_prev, args.padding_next)
 
 
 if __name__ == "__main__":

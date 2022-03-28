@@ -165,7 +165,7 @@ def download_subtitles(url, lang="fr"):
             "vtt",
             "--skip-download",
             "--output",
-            output_path,
+            os.path.join(CAPTIONS_FOLDER, f"{ video_id }"),
             f"https://www.youtube.com/watch?v={ video_id }",
         ]
     ).wait()
@@ -250,7 +250,7 @@ def retrieve_captions(vtt_source):
         source_path = download_subtitles(vtt_source)
         if source_path is None:
             raise ValueError(f"Could not download subtitles from { vtt_source }")
-        with open(vtt_source, "r", encoding="utf8") as file:
+        with open(source_path, "r", encoding="utf8") as file:
             text = file.read()
     return parse_webvtt(text)
 
@@ -290,7 +290,19 @@ def filter_captions_for_word(captions, word):
 
 
 def get_video_stream(url):
-    raise NotImplemented
+    process = subprocess.Popen(
+        [
+            YOUTUBE_DL_EXECUTABLE,
+            "-g",
+            url
+        ],
+        stdout=subprocess.PIPE
+    )
+    process.wait()
+    split = process.stdout.read().decode("utf8").strip().split("\n")
+    if len(split) != 2:
+        raise RuntimeError(f"Could not find a stream for { url }")
+    return split
 
 
 def extract_captions(video_source, captions):
@@ -299,23 +311,54 @@ def extract_captions(video_source, captions):
     for i, caption in enumerate(tqdm.tqdm(captions)):
         outpath = os.path.join(tempdir, "%04d.mp4" % i)
         files.append(outpath)
-        subprocess.Popen(
-            [
-                FFMPEG_EXECUTABLE,
-                "-loglevel",
-                "quiet",
-                # "-stats",
-                "-hide_banner",
-                "-ss",
-                caption.start.to_ffmpeg_timecode(),
-                "-i",
-                video_source,
-                "-t",
-                (caption.end - caption.start).to_ffmpeg_timecode(),
-                outpath,
-                "-y"
-            ]
-        ).wait()
+        if isinstance(video_source, str):
+            subprocess.Popen(
+                [
+                    FFMPEG_EXECUTABLE,
+                    "-loglevel",
+                    "quiet",
+                    "-hide_banner",
+                    "-ss",
+                    caption.start.to_ffmpeg_timecode(),
+                    "-i",
+                    video_source,
+                    "-t",
+                    (caption.end - caption.start).to_ffmpeg_timecode(),
+                    outpath,
+                    "-y"
+                ]
+            ).wait()
+        else:
+            subprocess.Popen(
+                [
+                    FFMPEG_EXECUTABLE,
+                    "-loglevel",
+                    "quiet",
+                    "-hide_banner",
+                    "-ss",
+                    caption.start.to_ffmpeg_timecode(),
+                    "-i",
+                    video_source[0],
+                    "-t",
+                    (caption.end - caption.start).to_ffmpeg_timecode(),
+                    "-ss",
+                    caption.start.to_ffmpeg_timecode(),
+                    "-i",
+                    video_source[1],
+                    "-t",
+                    (caption.end - caption.start).to_ffmpeg_timecode(),
+                    "-map",
+                    "0:v",
+                    "-map",
+                    "1:a",
+                    "-c:v",
+                    "libx264",
+                    "-c:a",
+                    "aac",
+                    outpath,
+                    "-y"
+                ]
+            ).wait()
     return files
 
 

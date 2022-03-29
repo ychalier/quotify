@@ -4,3 +4,5 @@
 *.json
 *.csv
 *.webm
+__pycache__/
+*.pyc

@@ -1,0 +1,4 @@
+YOUTUBE_DL_EXECUTABLE = "yt-dlp"
+FFMPEG_EXECUTABLE = "ffmpeg"
+FFPROBE_EXECUTABLE = "ffprobe"
+CAPTIONS_FOLDER = "captions"

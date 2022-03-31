@@ -1,3 +1,6 @@
+import random
+
+from torch import rand
 from .utils import tokenize
 
 
@@ -42,23 +45,24 @@ def find_in_captions(captions, tokens, padding_prev, padding_next):
     return None if len(match) == 0 else captions[index_first - padding_prev: index_last + padding_next + 1]
 
 
-def find_captions_for_sentence(inputs, sentence, padding_prev, padding_next):
+def find_captions_for_sentence(inputs, sentence, padding_prev, padding_next, lookahead=5):
     tokens = tokenize(sentence)
     i = 0
     selection = []
     while i < len(tokens):
         found_i = False
-        for j in range(len(tokens), i, -1):
-            found_at_j = False
+        for j in range(min(len(tokens), i + lookahead), i, -1):
+            # found_at_j = False
+            candidates = []
             for captions, video_source in inputs:
                 match = find_in_captions(captions, tokens[i:j], padding_prev, padding_next)
                 if match is not None:
-                    found_at_j = True
-                    selection.append((video_source, match))
-                    break
-            if found_at_j:
+                    # found_at_j = True
+                    candidates.append((video_source, match))
+            if len(candidates) > 0:
                 i = j
                 found_i = True
+                selection.append(random.choice(candidates))
                 break
         if not found_i:
             print(f"Could not find '{ tokens[i] }'")

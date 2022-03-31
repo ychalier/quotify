@@ -15,7 +15,7 @@ def main_parse(vtt_source, captions_output):
     export_captions(captions, captions_output)
 
 
-def main_compile_word(vtt_source, video_source, word, video_output, parts_directory, padding_prev, padding_next):
+def main_compile_word(vtt_source, video_source, word, video_output, parts_directory, padding_prev, padding_next, no_merge):
     if word is None:
         raise ValueError("Target word is None")
     captions = retrieve_captions(vtt_source)
@@ -23,7 +23,8 @@ def main_compile_word(vtt_source, video_source, word, video_output, parts_direct
     if video_source is None:
         video_source = get_video_stream(vtt_source)
     files = extract_captions(selection, parts_directory)
-    merge_video_files(files, video_output)
+    if not no_merge:
+        merge_video_files(files, video_output)
 
 
 def download_video(url, output):
@@ -42,7 +43,7 @@ def download_video(url, output):
     ).wait()
 
 
-def main_build_sentence(raw_inputs, sentence, video_output, part_directory, padding_prev, padding_next):
+def main_build_sentence(raw_inputs, sentence, video_output, part_directory, padding_prev, padding_next, no_merge):
     if sentence is None:
         raise ValueError("Target sentence is None")
     if os.path.isfile(sentence):
@@ -56,7 +57,8 @@ def main_build_sentence(raw_inputs, sentence, video_output, part_directory, padd
         inputs.append((captions, video_source))
     selection = find_captions_for_sentence(inputs, sentence, padding_prev, padding_next)
     files = extract_captions(selection, part_directory)
-    merge_video_files(files, video_output)
+    if not no_merge:
+        merge_video_files(files, video_output)
 
 
 def main():
@@ -69,6 +71,7 @@ def main():
     parser.add_argument("-s", "--sentence", type=str)
     parser.add_argument("-pp", "--padding-prev", type=int, default=0)
     parser.add_argument("-pn", "--padding-next", type=int, default=1)
+    parser.add_argument("-n", "--no-merge", action="store_true")
     args = parser.parse_args()
     for i in range(0, len(args.input), 2):
         if i + 1 < len(args.input) and args.input[i + 1] == "_":
@@ -76,11 +79,11 @@ def main():
     if args.action == "parse":
         main_parse(args.input[0], args.output)
     elif args.action == "word":
-        main_compile_word(args.input[0], args.input[1], args.word, args.output, args.parts_directory, args.padding_prev, args.padding_next)
+        main_compile_word(args.input[0], args.input[1], args.word, args.output, args.parts_directory, args.padding_prev, args.padding_next, args.no_merge)
     elif args.action == "download":
         download_video(args.input[0], args.output)
     elif args.action == "sentence":
-        main_build_sentence(args.input, args.sentence, args.output, args.parts_directory, args.padding_prev, args.padding_next)
+        main_build_sentence(args.input, args.sentence, args.output, args.parts_directory, args.padding_prev, args.padding_next, args.no_merge)
 
 
 main()

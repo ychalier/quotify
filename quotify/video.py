@@ -1,3 +1,4 @@
+from lib2to3.pgen2 import token
 import os
 import json
 import tempfile
@@ -43,11 +44,18 @@ def get_video_stream(url):
     return split
 
 
+def slugify(*captions):
+    return "-".join(
+        token
+        for caption in captions
+        for token in caption.tokens()
+    )
+
 
 def extract_captions(selection, parts_directory):
     files = []
     for i, (video_source, captions) in enumerate(tqdm.tqdm(selection)):
-        outpath = os.path.join(parts_directory, "%04d.mp4" % i)
+        outpath = os.path.join(parts_directory, "%04d-%s.mp4" % (i, slugify(*captions)))
         files.append(os.path.realpath(outpath))
         if isinstance(video_source, str):
             subprocess.Popen(

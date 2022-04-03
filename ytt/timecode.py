@@ -1,9 +1,9 @@
 import re
 
 
-class Timestamp:
+class Timecode:
 
-    STRING_PATTERN = re.compile(r"(\d\d):(\d\d):(\d\d)\.(\d\d\d)")
+    PATTERN = re.compile(r"(\d\d):(\d\d):(\d\d)\.(\d\d\d)")
 
     def __init__(self, total_seconds):
         self.total_seconds = total_seconds
@@ -19,10 +19,18 @@ class Timestamp:
         return hash(self.total_seconds)
 
     def __add__(self, other):
-        return Timestamp(self.total_seconds + other.total_seconds)
+        return Timecode(self.total_seconds + other.total_seconds)
 
     def __sub__(self, other):
-        return Timestamp(self.total_seconds - other.total_seconds)
+        return Timecode(self.total_seconds - other.total_seconds)
+    
+    def __gt__(self, other):
+        if isinstance(other, Timecode):
+            return self.total_seconds > other.total_seconds
+        elif isinstance(other, float) or isinstance(other, int):
+            return self.total_seconds > other
+        else:
+            raise TypeError("'>' not supported between instances of 'Timecode' and '%s'" % type(other))
 
     def __repr__(self):
         return str(self.total_seconds)
@@ -36,7 +44,7 @@ class Timestamp:
         )
     
     def copy(self):
-        return Timestamp(self.total_seconds)
+        return Timecode(self.total_seconds)
     
     def to_ffmpeg_timecode(self):
         return "%02d:%02d:%02d.%02d" % (
@@ -56,7 +64,7 @@ class Timestamp:
     
     @classmethod
     def from_string(cls, string):
-        match = cls.STRING_PATTERN.match(string)
+        match = cls.PATTERN.match(string)
         return cls(
             3600 * int(match.group(1))\
             + 60 * int(match.group(2))\

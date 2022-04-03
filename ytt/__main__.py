@@ -1,89 +1,38 @@
-import subprocess
 import argparse
-import tempfile
-import os
-
-from ytt.config import YOUTUBE_DL_EXECUTABLE
-from ytt.caption import export_captions
-from ytt.webvtt import retrieve_captions
-from ytt.search import filter_captions_for_word, find_captions_for_sentence
-from ytt.video import get_video_stream, extract_captions, merge_video_files
-
-
-def main_parse(vtt_source, captions_output):
-    captions = retrieve_captions(vtt_source)
-    export_captions(captions, captions_output)
-
-
-def main_compile_word(vtt_source, video_source, word, video_output, parts_directory, padding_prev, padding_next, no_merge):
-    if word is None:
-        raise ValueError("Target word is None")
-    captions = retrieve_captions(vtt_source)
-    selection = filter_captions_for_word(captions, video_source, word, padding_prev, padding_next)
-    if video_source is None:
-        video_source = get_video_stream(vtt_source)
-    files = extract_captions(selection, parts_directory)
-    if not no_merge:
-        merge_video_files(files, video_output)
-
-
-def download_video(url, output):
-    subprocess.Popen(
-        [
-            YOUTUBE_DL_EXECUTABLE,
-            "--write-auto-sub",
-            "--sub-lang",
-            "fr",
-            "--sub-format",
-            "vtt",
-            "--output",
-            output,
-            url,
-        ]
-    ).wait()
-
-
-def main_build_sentence(raw_inputs, sentence, video_output, part_directory, padding_prev, padding_next, no_merge):
-    if sentence is None:
-        raise ValueError("Target sentence is None")
-    if os.path.isfile(sentence):
-        with open(sentence, "r", encoding="utf8") as file:
-            sentence = file.read()
-    inputs = []
-    for vtt_source, video_source in zip(raw_inputs[::2], raw_inputs[1::2]):
-        captions = retrieve_captions(vtt_source)
-        if not os.path.isfile(video_source):
-            video_source = get_video_stream(video_source)
-        inputs.append((captions, video_source))
-    selection = find_captions_for_sentence(inputs, sentence, padding_prev, padding_next)
-    files = extract_captions(selection, part_directory)
-    if not no_merge:
-        merge_video_files(files, video_output)
+from ytt.config import Config
+from ytt.source import Source
+from ytt.transcript_pool import TranscriptPool
 
 
 def main():
+    config = Config()
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", type=str, choices={"parse", "word", "download", "sentence"})
-    parser.add_argument("input", type=str, nargs="+")
-    parser.add_argument("output", type=str)
-    parser.add_argument("-d", "--parts-directory", type=str, default=tempfile.gettempdir())
-    parser.add_argument("-w", "--word", type=str)
-    parser.add_argument("-s", "--sentence", type=str)
-    parser.add_argument("-pp", "--padding-prev", type=int, default=0)
-    parser.add_argument("-pn", "--padding-next", type=int, default=1)
-    parser.add_argument("-n", "--no-merge", action="store_true")
+    parser.add_argument("-i", "--input", type=str, required=True, action="append", help="path to a VTT file, path to a video file or URL to a YouTube video, separated by commas; several sources can be passed; each source must provide either a path to a VTT file or a YouTube video URL")
+    parser.add_argument("-ft", "--filter", type=str, default=None, help="regular expression pattern applied to each caption (default: None)")
+    parser.add_argument("-fd", "--find", type=str, default=None, help="sentence to find as a subsequence of captions (default: None)")
+    parser.add_argument("-o", "--output", type=str, default=None, help="file path to export transcripts to, as JSON or CSV (default: None)")
+    parser.add_argument("-x", "--extract", type=str, default=None, help="directory path to export video extracts (default: None)")
+    config.add_arguments(parser)
     args = parser.parse_args()
-    for i in range(0, len(args.input), 2):
-        if i + 1 < len(args.input) and args.input[i + 1] == "_":
-            args.input[i + 1] = args.input[i]
-    if args.action == "parse":
-        main_parse(args.input[0], args.output)
-    elif args.action == "word":
-        main_compile_word(args.input[0], args.input[1], args.word, args.output, args.parts_directory, args.padding_prev, args.padding_next, args.no_merge)
-    elif args.action == "download":
-        download_video(args.input[0], args.output)
-    elif args.action == "sentence":
-        main_build_sentence(args.input, args.sentence, args.output, args.parts_directory, args.padding_prev, args.padding_next, args.no_merge)
+    config.update(args)
+    config.setup()
+    transcript_pool = TranscriptPool.from_sources(
+        config,
+        [
+            Source.from_arg(config, source_arg)
+            for source_arg in args.input
+        ]
+    )
+    if args.filter is not None:
+        transcript_pool = transcript_pool.filter(args.filter)
+    if args.find is not None:
+        transcript_pool = transcript_pool.find(args.find)
+    if args.output is not None:
+        transcript_pool.export(args.output)
+    if args.extract is not None:
+        transcript_pool.extract(args.extract)
+    if args.output is None and args.extract is None:
+        print(transcript_pool)
 
 
 main()

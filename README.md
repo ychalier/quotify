@@ -1,4 +1,4 @@
-# Youtube Transcript Toolkit
+# ytt - Youtube Transcript Toolkit
 
 YouTube [automatic captioning](https://support.google.com/youtube/answer/6373554) is a very neat feature as it a provides summarized and static ressources for exploiting the content of videos by generating precisely timed transcripts. For instance, with audio book or audio theatre videos, it can help [extracting the script of fictional works](https://github.com/ychalier/les-mysteres-perces) without having to run (and pay for) a state-of-the-art [STT](https://en.wikipedia.org/wiki/Speech_recognition) software.
 
@@ -24,4 +24,22 @@ You must have a working installation of [youtube-dl](https://youtube-dl.org/) (a
 
 ### Installation
 
+Simply clone this repository:
+
+```console
+git clone https://github.com/ychalier/ytt.git
+```
+
 ### Usage
+
+```console
+python ytt.py [-h] -i INPUT [-ft FILTER] [-fd FIND] [-o OUTPUT] [-x EXTRACT]
+              [-yd YOUTUBE_DL] [-fm FFMPEG] [-td TEMPDIR] [-lg LANG]
+              [-pp PADDING_PREV] [-pn PADDING_NEXT] [-la LOOKAHEAD] [-ff]
+```
+
+Use `-h` or `--help` to get details. For example, here's how to get the first word montage:
+
+```console
+python ytt.py -i https://www.youtube.com/watch?v=GuTgfnkILGs -ft boule -x . -pp 1 -pn 1
+```

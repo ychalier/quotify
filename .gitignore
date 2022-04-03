@@ -1,8 +1,2 @@
-*.vtt
-*.mp4
-*.txt
-*.json
-*.csv
-*.webm
 __pycache__/
 *.pyc

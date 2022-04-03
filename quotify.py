@@ -1,1 +1,0 @@
-import quotify.__main__

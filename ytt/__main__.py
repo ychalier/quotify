@@ -3,11 +3,11 @@ import argparse
 import tempfile
 import os
 
-from quotify.config import YOUTUBE_DL_EXECUTABLE
-from quotify.caption import export_captions
-from quotify.webvtt import retrieve_captions
-from quotify.search import filter_captions_for_word, find_captions_for_sentence
-from quotify.video import get_video_stream, extract_captions, merge_video_files
+from ytt.config import YOUTUBE_DL_EXECUTABLE
+from ytt.caption import export_captions
+from ytt.webvtt import retrieve_captions
+from ytt.search import filter_captions_for_word, find_captions_for_sentence
+from ytt.video import get_video_stream, extract_captions, merge_video_files
 
 
 def main_parse(vtt_source, captions_output):

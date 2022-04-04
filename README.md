@@ -20,7 +20,7 @@ So the first thing this module does is parsing those VTT files and generating cl
 
 ### Prerequisites
 
-You must have a working installation of [youtube-dl](https://youtube-dl.org/) (any fork should work) and [FFmpeg](https://ffmpeg.org/). Better if they are in `PATH`.
+You must have a working installation of [Python](https://www.python.org/), [youtube-dl](https://youtube-dl.org/) (any fork should work) and [FFmpeg](https://ffmpeg.org/). Better if they are in `PATH`.
 
 ### Installation
 
@@ -28,6 +28,13 @@ Simply clone this repository:
 
 ```console
 git clone https://github.com/ychalier/ytt.git
+```
+
+And install the requirements (actually, only [`tqdm`](https://github.com/tqdm/tqdm)):
+
+```console
+cd ytt
+pip install -r requirements.txt
 ```
 
 ### Usage

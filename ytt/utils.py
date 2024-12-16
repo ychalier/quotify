@@ -26,7 +26,7 @@ def normalize(string):
 def tokenize(string):
     """Split a string in a list of tokens, after basic normalization
     """
-    return list(filter(lambda x: len(x) > 0, re.sub(r" +", " ", normalize(string)).strip().split(" ")))
+    return list(filter(lambda x: len(x) > 0, re.sub(r" +", " ", normalize(string.replace("'", " "))).strip().split(" ")))
 
 
 def extract_video_id(url):

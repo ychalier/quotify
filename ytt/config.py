@@ -5,7 +5,7 @@ import tempfile
 class Config:
 
     def __init__(self,
-                 youtube_dl="youtube-dl",
+                 youtube_dl="yt-dlp",
                  ffmpeg="ffmpeg",
                  tempdir=tempfile.gettempdir(),
                  lang="fr",
